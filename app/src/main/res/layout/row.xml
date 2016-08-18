@@ -7,7 +7,7 @@
     app:elevation="2dp"
     app:cardCornerRadius="5dp"
     android:layout_margin="5dp"
-    >
+    app:cardBackgroundColor="@color/darkGrey">
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -22,6 +22,7 @@
             android:layout_alignParentTop="true"
             android:layout_marginStart="10dp"
             android:text="Key"
+            android:textColor="@color/colorAccent"
             android:textAppearance="?android:attr/textAppearanceMedium" />
 
         <TextView

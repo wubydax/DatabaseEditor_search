@@ -2,22 +2,31 @@ package com.wubydax.dbeditor;
 
 import android.annotation.SuppressLint;
 import android.app.AlertDialog;
+import android.content.ContentResolver;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
 import android.text.Editable;
+import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.view.LayoutInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.Filter;
 import android.widget.Filterable;
 import android.widget.TextView;
+import android.widget.Toast;
+
+import com.stericson.RootShell.exceptions.RootDeniedException;
+import com.stericson.RootShell.execution.Command;
+import com.stericson.RootTools.RootTools;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -25,6 +34,7 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeoutException;
 
 /*      Created by Roberto Mariani and Anna Berkovitch, 26/03/16
         This program is free software: you can redistribute it and/or modify
@@ -45,7 +55,8 @@ public class TableValuesFragment extends Fragment implements CheckSu.OnExecutedL
     private RecyclerView mRecyclerView;
     private String mTableName;
     private List<TableItems> mList;
-    EditText search;
+    private EditText mSearch;
+    private ContentResolver mContentResolver;
 
     public TableValuesFragment() {
     }
@@ -59,12 +70,96 @@ public class TableValuesFragment extends Fragment implements CheckSu.OnExecutedL
     }
 
     @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setHasOptionsMenu(true);
+        mContentResolver = getActivity().getContentResolver();
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        showNewEntryDialog();
+        return super.onOptionsItemSelected(item);
+    }
+
+    private void showNewEntryDialog() {
+        @SuppressLint("InflateParams") final View view = LayoutInflater.from(getActivity()).inflate(R.layout.new_entry_dialog_layout, null);
+        final EditText newKey = (EditText) view.findViewById(R.id.new_entry_key);
+        final EditText newValue = (EditText) view.findViewById(R.id.new_entry_value);
+        new AlertDialog.Builder(getActivity())
+                .setTitle("Add entry to current table")
+                .setView(view)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        String key = newKey.getText().toString();
+                        String value = newValue.getText().toString();
+                        if (!TextUtils.isEmpty(key) && !TextUtils.isEmpty(value)) {
+                            switch (mTableName) {
+                                case "system":
+                                    updateSystem(key, value);
+                                    break;
+                                case "global":
+                                    updateGlobal(key, value);
+                                    break;
+                                case "secure":
+                                    updateSecure(key, value);
+                                    break;
+                            }
+                        } else {
+                            Toast.makeText(getActivity(), "Key or value cannot be empty", Toast.LENGTH_SHORT).show();
+                        }
+                    }
+                }).create()
+                .show();
+    }
+
+    private void updateSecure(String key, String value) {
+        if (TextUtils.isEmpty(Settings.Secure.getString(mContentResolver, key))) {
+            Settings.Secure.putString(mContentResolver, key, value);
+            updateAdapter(key, value);
+        } else {
+            Toast.makeText(getActivity(), "Entry already exists", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void updateGlobal(String key, String value) {
+        if (TextUtils.isEmpty(Settings.Global.getString(mContentResolver, key))) {
+            Settings.Global.putString(mContentResolver, key, value);
+            updateAdapter(key, value);
+        } else {
+            Toast.makeText(getActivity(), "Entry already exists", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void updateSystem(String key, String value) {
+        if (TextUtils.isEmpty(Settings.System.getString(mContentResolver, key))) {
+            Settings.System.putString(mContentResolver, key, value);
+            updateAdapter(key, value);
+        } else {
+            Toast.makeText(getActivity(), "Entry already exists", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void updateAdapter(String key, String value) {
+        TableItems tableItems = new TableItems();
+        tableItems.key = key;
+        tableItems.value = value;
+        mList.add(tableItems);
+        if (mRecyclerView.getAdapter() != null) {
+            ((TableValuesAdapter) mRecyclerView.getAdapter()).updateList(tableItems);
+        }
+    }
+
+    @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
         mList = new ArrayList<>();
         mTableName = getArguments().getString(TABLE_NAME);
         View rootView = inflater.inflate(R.layout.fragment_table_values, container, false);
-        search = (EditText) rootView.findViewById(R.id.searchKey);
+        mSearch = (EditText) rootView.findViewById(R.id.searchKey);
+
         mRecyclerView = (RecyclerView) rootView.findViewById(R.id.recyclerView);
         CheckSu checkIt = new CheckSu(getActivity(), mTableName);
         checkIt.setOnExecutedListener(this);
@@ -109,7 +204,7 @@ public class TableValuesFragment extends Fragment implements CheckSu.OnExecutedL
         mRecyclerView.setLayoutManager(new LinearLayoutManager(getActivity()));
         final TableValuesAdapter tableValuesAdapter = new TableValuesAdapter();
         mRecyclerView.setAdapter(tableValuesAdapter);
-        search.addTextChangedListener(new TextWatcher() {
+        mSearch.addTextChangedListener(new TextWatcher() {
 
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {
@@ -128,12 +223,13 @@ public class TableValuesFragment extends Fragment implements CheckSu.OnExecutedL
 
     }
 
-    private void showDialog(final String key, final String value, final int position) {
+    private void showUpdateDialog(final String key, final String value, final int position) {
         @SuppressLint("InflateParams") View view = LayoutInflater.from(getActivity()).inflate(R.layout.dialog_layout, null, false);
         final TextView valueText = (TextView) view.findViewById(R.id.textValue);
         TextView keyText = (TextView) view.findViewById(R.id.textKey);
         final EditText editText = (EditText) view.findViewById(R.id.valueEditText);
         valueText.setText(value);
+        editText.setText(value);
         keyText.setText(key);
         new AlertDialog.Builder(getActivity())
                 .setTitle("Change value")
@@ -148,31 +244,34 @@ public class TableValuesFragment extends Fragment implements CheckSu.OnExecutedL
                             Intent grantPermission = new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS);
                             startActivity(grantPermission);
                         } else {
-                            switch(mTableName){
+                            switch (mTableName) {
                                 case "system":
-                                    Settings.System.putString(getActivity().getContentResolver(), key, newValue);
+                                    Settings.System.putString(mContentResolver, key, newValue);
                                     break;
                                 case "global":
-                                    Settings.Global.putString(getActivity().getContentResolver(), key, newValue);
+                                    Settings.Global.putString(mContentResolver, key, newValue);
                                     break;
                                 case "secure":
-                                    Settings.Secure.putString(getActivity().getContentResolver(), key, newValue);
+                                    Settings.Secure.putString(mContentResolver, key, newValue);
                                     break;
                             }
                             mList.get(position).value = newValue;
 
                         }
-                        mRecyclerView.getAdapter().notifyDataSetChanged();
+
+                        ((TableValuesAdapter) mRecyclerView.getAdapter()).notifyDataSetChanged();
                     }
                 }).show();
 
     }
 
-    public class TableValuesAdapter extends RecyclerView.Adapter<TableValuesAdapter.ViewHolder> implements Filterable{
-        private List<TableItems>originalList;
 
-        public TableValuesAdapter() {
-            originalList = mList;
+
+    public class TableValuesAdapter extends RecyclerView.Adapter<TableValuesAdapter.ViewHolder> implements Filterable {
+        private List<TableItems> mOriginalList;
+
+        TableValuesAdapter() {
+            mOriginalList = mList;
         }
 
         @Override
@@ -203,8 +302,8 @@ public class TableValuesFragment extends Fragment implements CheckSu.OnExecutedL
             return new Filter() {
                 @Override
                 protected FilterResults performFiltering(CharSequence constraint) {
-                    for(TableItems tableItems : originalList) {
-                        if(tableItems.key.toLowerCase().contains(constraint.toString().toLowerCase())) {
+                    for (TableItems tableItems : mOriginalList) {
+                        if (tableItems.key.toLowerCase().contains(constraint.toString().toLowerCase())) {
                             list.add(tableItems);
                         }
                     }
@@ -222,13 +321,55 @@ public class TableValuesFragment extends Fragment implements CheckSu.OnExecutedL
             };
         }
 
+        void updateList(TableItems tableItems) {
+            mOriginalList.add(tableItems);
+            notifyDataSetChanged();
+        }
+
+        public TableItems getItem(int position) {
+            return mList != null ? mList.get(position) : null;
+        }
+
+        private void showDeleteDialog(final TableItems tableItems) {
+            new AlertDialog.Builder(getActivity())
+                    .setTitle("Delete entry?")
+                    .setMessage("Are you sure you want to delete " + tableItems.key + " from " + mTableName + " table?")
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialogInterface, int i) {
+                            Command command = new Command(0, "settings delete " + mTableName + " " + tableItems.key) {
+                                @Override
+                                public void commandCompleted(int id, int exitcode) {
+                                    super.commandCompleted(id, exitcode);
+                                    if (exitcode != 0) {
+                                        Toast.makeText(getActivity(), "Failed to delete value", Toast.LENGTH_SHORT).show();
+                                    } else {
+                                        mList.remove(tableItems);
+                                        mOriginalList.remove(tableItems);
+                                        notifyDataSetChanged();
+                                    }
+                                }
+                            };
+                            try {
+                                RootTools.getShell(true).add(command);
+                            } catch (IOException | TimeoutException e) {
+                                e.printStackTrace();
+                            } catch (RootDeniedException e) {
+                                Toast.makeText(getActivity(), "Failed to acquire root privileges", Toast.LENGTH_SHORT).show();
+                            }
+                        }
+                    }).create()
+                    .show();
+        }
+
 
         class ViewHolder extends RecyclerView.ViewHolder {
             TextView keyTextView;
             TextView valueTextView;
             int mPosition;
 
-            public ViewHolder(View itemView) {
+            ViewHolder(View itemView) {
                 super(itemView);
                 keyTextView = (TextView) itemView.findViewById(R.id.keyTextView);
                 valueTextView = (TextView) itemView.findViewById(R.id.valueTextView);
@@ -237,8 +378,15 @@ public class TableValuesFragment extends Fragment implements CheckSu.OnExecutedL
                     public void onClick(View v) {
                         final String key = mList.get(mPosition).key;
                         final String value = mList.get(mPosition).value;
-                        showDialog(key, value, mPosition);
+                        showUpdateDialog(key, value, mPosition);
 
+                    }
+                });
+                itemView.setOnLongClickListener(new View.OnLongClickListener() {
+                    @Override
+                    public boolean onLongClick(View view) {
+                        showDeleteDialog(getItem(mPosition));
+                        return true;
                     }
                 });
             }
@@ -249,4 +397,5 @@ public class TableValuesFragment extends Fragment implements CheckSu.OnExecutedL
         String key;
         String value;
     }
+
 }

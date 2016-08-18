@@ -2,4 +2,9 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     tools:context="com.wubydax.dbeditor.MainActivity" >
+    <item
+        android:title="Add entry"
+        android:id="@+id/add_entry_menu"
+        app:showAsAction="always"
+        android:icon="@drawable/ic_add"/>
 </menu>

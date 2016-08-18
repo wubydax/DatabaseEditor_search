@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <color name="colorPrimary">#3F51B5</color>
-    <color name="colorPrimaryDark">#303F9F</color>
-    <color name="colorAccent">#96dc45</color>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <color name="colorPrimary">#270661</color>
+    <color name="colorPrimaryDark">#270661</color>
+    <color name="colorAccent">#dcce10</color>
+    <color name="darkGrey">#1d1d1d</color>
+    <color name="background_material_dark" tools:override="true">#000000</color>
 </resources>
